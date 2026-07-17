@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🛡️ Advanced AI Red-Team Console</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #070913;
+      --panel: rgba(22, 28, 45, 0.4);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --critical: #ef4444;
+      --high: #f97316;
+      --medium: #eab308;
+      --low: #3b82f6;
+      --success: #10b981;
+      --accent: #8b5cf6;
+      --glass-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #1c1936 0%, var(--bg) 70%);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      min-height: 100vh;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    /* Container */
+    .dashboard-container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Header Bar */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 32px;
+      margin-bottom: 24px;
+      box-shadow: var(--glass-glow);
+    }
+
+    .brand-section h1 {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-section p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .controls-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    /* Primary Scan Button */
+    .btn-scan {
+      background: linear-gradient(135deg, var(--accent) 0%, #6d28d9 100%);
+      color: #fff;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 15px;
+      box-shadow: 0 4px 14px 0 rgba(139, 92, 246, 0.4);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-scan:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px 0 rgba(139, 92, 246, 0.6);
+    }
+
+    .btn-scan:disabled {
+      background: #1e293b;
+      color: #475569;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Shield Toggle Switch */
+    .shield-toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 8px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .shield-label {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #334155;
+      transition: .4s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+
+    input:checked + .slider {
+      background-color: var(--success);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+
+    .shield-status-text {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      min-width: 65px;
+    }
+
+    .shield-status-text.enabled {
+      color: var(--success);
+    }
+
+    /* Stats Overview */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: var(--glass-glow);
+    }
+
+    .stat-card h4 {
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    /* Two Column Content */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    /* Sidebar console */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .terminal-container {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: var(--glass-glow);
+    }
+
+    .terminal-header {
+      background: #0f172a;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .terminal-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .terminal-dot.r { background: var(--critical); }
+    .terminal-dot.y { background: var(--medium); }
+    .terminal-dot.g { background: var(--success); }
+
+    .terminal-title {
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .terminal-body {
+      padding: 16px;
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      height: 400px;
+      overflow-y: auto;
+      color: #38bdf8;
+    }
+
+    .terminal-line {
+      margin-bottom: 8px;
+      word-wrap: break-word;
+    }
+
+    .terminal-line.scanning { color: #facc15; }
+    .terminal-line.alert { color: var(--critical); font-weight: bold; }
+    .terminal-line.secure { color: var(--success); }
+    .terminal-line.info { color: #e2e8f0; }
+
+    /* Exploit Chain Section */
+    .chains-box {
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: var(--glass-glow);
+    }
+
+    .chains-box h3 {
+      font-size: 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chain-card {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(234, 179, 8, 0.3);
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 12px;
+      border-left: 4px solid var(--medium);
+    }
+
+    .chain-badge {
+      display: inline-block;
+      background: rgba(234, 179, 8, 0.1);
+      color: var(--medium);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    /* Findings List */
+    .findings-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .vuln-card {
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: var(--glass-glow);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .vuln-card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      background: rgba(22, 28, 45, 0.5);
+    }
+
+    .vuln-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .vuln-title-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .vuln-title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 8px;
+      text-transform: uppercase;
+    }
+
+    .badge.Critical { background: rgba(239, 68, 68, 0.15); color: var(--critical); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge.High { background: rgba(249, 115, 22, 0.15); color: var(--high); border: 1px solid rgba(249, 115, 22, 0.3); }
+    .badge.Medium { background: rgba(234, 179, 8, 0.15); color: var(--medium); border: 1px solid rgba(234, 179, 8, 0.3); }
+    .badge.Low { background: rgba(59, 130, 246, 0.15); color: var(--low); border: 1px solid rgba(59, 130, 246, 0.3); }
+
+    .badge.chained {
+      background: rgba(139, 92, 246, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+
+    .vuln-endpoint {
+      font-family: 'Fira Code', monospace;
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: inline-block;
+      margin-bottom: 16px;
+    }
+
+    .vuln-endpoint span {
+      color: var(--accent);
+      font-weight: bold;
+      margin-right: 6px;
+    }
+
+    .vuln-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .vuln-description {
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 16px;
+      color: #cbd5e1;
+    }
+
+    .vuln-details-accordion {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease-out;
+    }
+
+    .vuln-details-accordion.expanded {
+      max-height: 1200px;
+    }
+
+    /* Code Diff Container */
+    .diff-container {
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+    }
+
+    .diff-line {
+      display: block;
+      white-space: pre;
+    }
+
+    .diff-line.addition {
+      background-color: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+    }
+
+    .diff-line.deletion {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+    }
+
+    .diff-line.info {
+      color: var(--muted);
+    }
+
+    .no-vulns {
+      text-align: center;
+      padding: 64px 32px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      color: var(--muted);
+    }
+
+    .no-vulns svg {
+      width: 48px;
+      height: 48px;
+      stroke: var(--success);
+      margin-bottom: 16px;
+    }
+
+    .no-vulns h3 {
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+  </style>
+</head>
+<body>
+
+<div class="dashboard-container">
+  <header>
+    <div class="brand-section">
+      <h1>🛡️ AI Red-Team Operations Console</h1>
+      <p>Automated Vulnerability Detection, Chaining & Remediation Interface</p>
+    </div>
+    
+    <div class="controls-section" style="display: flex; gap: 12px; align-items: center;">
+      <input type="text" id="targetUrl" value="http://localhost:3001" style="padding: 10px 16px; border-radius: 12px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text); font-family: 'Fira Code', monospace; width: 250px;" placeholder="Target URL" />
+      
+      <label class="btn-scan" style="background: var(--panel); border: 1px solid var(--border); box-shadow: none; color: var(--text); padding: 10px 16px; cursor: pointer;">
+        <svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+        </svg>
+        Upload Source ZIP
+        <input type="file" id="sourceZip" accept=".zip" style="display: none;" onchange="document.getElementById('zipName').textContent = this.files[0]?.name || ''" />
+      </label>
+      <span id="zipName" style="font-size: 12px; color: var(--muted); max-width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+
+      <button id="downloadBtn" class="btn-scan" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); display: none;" onclick="downloadReport()">
+        <svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+        </svg>
+        Report
+      </button>
+
+      <button id="scanBtn" class="btn-scan" onclick="runScan()">
+        <svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+        </svg>
+        Execute Scan
+      </button>
+    </div>
+  </header>
+
+  <!-- Stats Grid -->
+  <div class="stats-row" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card">
+      <h4>Vulnerabilities Found</h4>
+      <div id="statVulns" class="stat-value">0</div>
+    </div>
+    <div class="stat-card">
+      <h4>Highest CVSS</h4>
+      <div id="statCvss" class="stat-value">0.0</div>
+    </div>
+    <div class="stat-card">
+      <h4>Chains Detected</h4>
+      <div id="statChains" class="stat-value">0</div>
+    </div>
+  </div>
+
+  <!-- Main content area -->
+  <div class="main-grid">
+    <!-- Left Column: Terminal & Chains -->
+    <div class="sidebar">
+      <div class="terminal-container">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="terminal-dot r"></span>
+            <span class="terminal-dot y"></span>
+            <span class="terminal-dot g"></span>
+          </div>
+          <div class="terminal-title">Console Output</div>
+        </div>
+        <div id="terminalBody" class="terminal-body">
+          <div class="terminal-line info">Ready to scan target environment.</div>
+        </div>
+      </div>
+
+      <div id="chainsSection" class="chains-box" style="display:none;">
+        <h3>🔗 Exploit Paths</h3>
+        <div id="chainsList"></div>
+      </div>
+    </div>
+
+    <!-- Right Column: Findings -->
+    <div id="findingsGrid" class="findings-container">
+      <div class="no-vulns">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <h3>No findings to display</h3>
+        <p>Run a vulnerability scan to inspect local environment dependencies.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API_BASE = "http://localhost:8000";
+  const TARGET_BASE = "http://localhost:3001";
+  const ws = new WebSocket("ws://localhost:8000/ws/scan");
+  
+  const findingsGrid = document.getElementById("findingsGrid");
+  const chainsSection = document.getElementById("chainsSection");
+  const chainsList = document.getElementById("chainsList");
+  const terminalBody = document.getElementById("terminalBody");
+  const scanBtn = document.getElementById("scanBtn");
+  const downloadBtn = document.getElementById("downloadBtn");
+  const targetUrlInput = document.getElementById("targetUrl");
+  const sourceZipInput = document.getElementById("sourceZip");
+
+  // Counters
+  const statVulns = document.getElementById("statVulns");
+  const statCvss = document.getElementById("statCvss");
+  const statChains = document.getElementById("statChains");
+
+  let scanFindings = [];
+  let scanChains = [];
+  let highestScore = 0.0;
+
+  ws.onopen = () => appendLog("Scanner connection channel opened successfully.", "secure");
+  ws.onclose = () => appendLog("Scanner connection channel lost.", "alert");
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.event === "log") {
+      appendLog(msg.data.message, msg.data.status);
+    } else if (msg.event === "finding") {
+      renderFinding(msg.data);
+    } else if (msg.event === "chains") {
+      renderChains(msg.data);
+    } else if (msg.event === "scan_complete") {
+      scanBtn.disabled = false;
+      downloadBtn.style.display = "flex";
+      appendLog(`Scan operation completed. Total findings: ${msg.data.total_findings}`, "info");
+    }
+  };
+
+  function appendLog(message, statusClass = "info") {
+    const div = document.createElement("div");
+    div.className = `terminal-line ${statusClass}`;
+    div.textContent = `> ${message}`;
+    terminalBody.appendChild(div);
+    terminalBody.scrollTop = terminalBody.scrollHeight;
+  }
+
+  function renderFinding(f) {
+    // Clear default state placeholder if this is the first finding
+    if (scanFindings.length === 0) {
+      findingsGrid.innerHTML = "";
+    }
+    
+    scanFindings.push(f);
+    statVulns.textContent = scanFindings.length;
+    
+    const cvssScore = f.cvss?.score ?? 0.0;
+    if (cvssScore > highestScore) {
+      highestScore = cvssScore;
+      statCvss.textContent = highestScore.toFixed(1);
+    }
+
+    const card = document.createElement("div");
+    card.className = "vuln-card";
+    card.id = `vuln-${f.type.replace(/\s+/g, '-')}`;
+    
+    // Add expansion interaction
+    card.onclick = (e) => {
+      // Don't expand if user clicks elements inside accordion
+      if (e.target.closest('.vuln-details-accordion')) return;
+      const accordion = card.querySelector('.vuln-details-accordion');
+      accordion.classList.toggle('expanded');
+    };
+
+    const sev = f.cvss?.severity || "Low";
+    
+    // Format diff text HTML
+    let diffHtml = "";
+    if (f.analysis?.fix_code_diff) {
+      const lines = f.analysis.fix_code_diff.split('\n');
+      const linesHtml = lines.map(line => {
+        let cls = "";
+        if (line.startsWith('+')) cls = "addition";
+        else if (line.startsWith('-')) cls = "deletion";
+        else if (line.startsWith('@')) cls = "info";
+        return `<span class="diff-line ${cls}">${escapeHtml(line)}</span>`;
+      }).join('');
+      diffHtml = `
+        <div class="vuln-section-title" style="margin-top: 14px;">Remediation Patch Diff</div>
+        <div class="diff-container">${linesHtml}</div>
+      `;
+    }
+
+    card.innerHTML = `
+      <div class="vuln-header">
+        <div class="vuln-title-area">
+          <span class="badge ${sev}">${sev}</span>
+          ${f.chained ? '<span class="badge chained">⛓ Chained</span>' : ''}
+          <span class="vuln-title">${f.type}</span>
+        </div>
+        <div style="font-weight: 800; font-size: 15px;">CVSS ${cvssScore.toFixed(1)}</div>
+      </div>
+      
+      <div class="vuln-endpoint"><span>${f.method}</span>${f.endpoint}</div>
+      
+      <div class="vuln-section-title">Impact Analysis</div>
+      <div class="vuln-description">${f.analysis?.explanation || "No explanation returned."}</div>
+      
+      <div class="vuln-details-accordion">
+        <div class="vuln-section-title" style="border-top:1px solid rgba(255,255,255,0.05); padding-top: 14px;">Recommended Action</div>
+        <div class="vuln-description" style="color: #94a3b8;">${f.analysis?.fix || "No recommendation."}</div>
+        ${diffHtml}
+      </div>
+      
+      <div style="text-align: right; font-size: 11px; color: var(--muted); margin-top: 8px;">Click card to toggle patch details</div>
+    `;
+
+    findingsGrid.appendChild(card);
+  }
+
+  function renderChains(chains) {
+    if (!chains || !chains.length) {
+      chainsSection.style.display = "none";
+      statChains.textContent = "0";
+      return;
+    }
+    
+    scanChains = chains;
+    
+    statChains.textContent = chains.length;
+    chainsSection.style.display = "block";
+    chainsList.innerHTML = "";
+
+    chains.forEach(c => {
+      const div = document.createElement("div");
+      div.className = "chain-card";
+      
+      const badgeText = c.path ? c.path.join(" ➔ ") : `${c.from} ➔ ${c.to}`;
+      
+      div.innerHTML = `
+        <div class="chain-badge">⛓ ${badgeText}</div>
+        <div>${c.description}</div>
+      `;
+      chainsList.appendChild(div);
+    });
+  }
+
+  function downloadReport() {
+    if (scanFindings.length === 0) {
+      alert("No findings to export.");
+      return;
+    }
+    const reportData = {
+      target: targetUrlInput.value,
+      timestamp: new Date().toISOString(),
+      findings: scanFindings,
+      chains: scanChains
+    };
+    
+    const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `security_report_${new Date().getTime()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function runScan() {
+    scanFindings = [];
+    scanChains = [];
+    highestScore = 0.0;
+    statVulns.textContent = "0";
+    statCvss.textContent = "0.0";
+    statChains.textContent = "0";
+    
+    scanBtn.disabled = true;
+    downloadBtn.style.display = "none";
+    
+    findingsGrid.innerHTML = `
+      <div style="text-align:center; padding:64px; color:var(--muted)">
+        <div style="margin-bottom:16px;">Scanning target ecosystem for vulnerabilities...</div>
+      </div>
+    `;
+    chainsSection.style.display = "none";
+    
+    const formData = new FormData();
+    formData.append("target_url", targetUrlInput.value);
+    
+    if (sourceZipInput.files.length > 0) {
+      formData.append("source_code", sourceZipInput.files[0]);
+    }
+    
+    try {
+      await fetch(`${API_BASE}/api/scan`, { 
+        method: "POST",
+        body: formData 
+      });
+    } catch (e) {
+      appendLog("Scan execution failed. Backend engine offline.", "alert");
+      scanBtn.disabled = false;
+    }
+  }
+
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+</script>
+</body>
+</html>

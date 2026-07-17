@@ -1,0 +1,17 @@
+# Secrets
+.env
+scanner-engine/.env
+
+# Node
+vulnerable-app/node_modules/
+vulnerable-app/package-lock.json
+
+# Python
+scanner-engine/__pycache__/
+scanner-engine/attacks/__pycache__/
+scanner-engine/venv/
+scanner-engine/*.pyc
+scanner-engine/report.json
+
+# OS
+.DS_Store
