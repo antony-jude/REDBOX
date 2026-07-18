@@ -916,9 +916,17 @@
     let scanSummary = null;
     let highestScore = 0.0;
 
+    let isBackendOnline = false;
+    let hasLoggedWsFallback = false;
+
     function connectWebSocket() {
       clearTimeout(reconnectTimer);
-      ws = new WebSocket(`${WS_BASE}/ws/scan`);
+      try {
+        ws = new WebSocket(`${WS_BASE}/ws/scan`);
+      } catch (e) {
+        handleWsClose();
+        return;
+      }
 
       ws.onopen = () => {
         backendStatus.textContent = "Scanner: connected";
@@ -926,10 +934,7 @@
         appendLog("Scanner connection channel opened successfully.", "secure");
       };
       ws.onclose = () => {
-        backendStatus.textContent = "Scanner: disconnected - retrying";
-        backendStatus.style.color = "var(--critical)";
-        appendLog("Scanner connection channel lost. Retrying in 3 seconds.", "alert");
-        reconnectTimer = setTimeout(connectWebSocket, 3000);
+        handleWsClose();
       };
       ws.onerror = () => ws.close();
       ws.onmessage = (event) => {
@@ -950,6 +955,22 @@
       };
     }
 
+    function handleWsClose() {
+      if (isBackendOnline) {
+        backendStatus.textContent = "Scanner: connected (HTTP fallback)";
+        backendStatus.style.color = "var(--success)";
+        if (!hasLoggedWsFallback) {
+          appendLog("Scanner backend is online. Note: WebSockets are unavailable; live logs will not stream, but scan results will show upon completion.", "info");
+          hasLoggedWsFallback = true;
+        }
+      } else {
+        backendStatus.textContent = "Scanner: disconnected - retrying";
+        backendStatus.style.color = "var(--critical)";
+        appendLog("Scanner connection channel lost. Retrying in 3 seconds.", "alert");
+        reconnectTimer = setTimeout(connectWebSocket, 3000);
+      }
+    }
+
     function finishScan(totalFindings) {
       scanBtn.disabled = false;
       downloadBtn.style.display = "flex";
@@ -968,16 +989,33 @@
       try {
         const response = await fetch(`${API_BASE}/api/health`);
         if (!response.ok) throw new Error("health check failed");
-        backendStatus.textContent = "Scanner: connected";
-        backendStatus.style.color = "var(--success)";
-      } catch {
-        backendStatus.textContent = "Scanner: unavailable - start the backend on port 8000";
-        backendStatus.style.color = "var(--critical)";
+        isBackendOnline = true;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          backendStatus.textContent = "Scanner: connected (HTTP fallback)";
+          backendStatus.style.color = "var(--success)";
+          if (!hasLoggedWsFallback) {
+            appendLog("Scanner backend is online. Note: WebSockets are unavailable; live logs will not stream, but scan results will show upon completion.", "info");
+            hasLoggedWsFallback = true;
+          }
+        }
+      } catch (e) {
+        isBackendOnline = false;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          backendStatus.textContent = "Scanner: unavailable - start the backend on port 8000";
+          backendStatus.style.color = "var(--critical)";
+        }
       }
     }
 
-    connectWebSocket();
-    checkBackend();
+    function startBackendPolling() {
+      setInterval(checkBackend, 5000);
+    }
+
+    (async () => {
+      await checkBackend();
+      connectWebSocket();
+      startBackendPolling();
+    })();
 
     function appendLog(message, statusClass = "info") {
       const div = document.createElement("div");
