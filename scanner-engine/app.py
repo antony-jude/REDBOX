@@ -23,13 +23,14 @@ import shutil
 import zipfile
 import subprocess
 import sys
+import requests
 from pathlib import Path
 from urllib.parse import urlparse
 
 # Ensure local directories are in the Python search path (critical for Vercel/lambda environments)
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -132,30 +133,32 @@ def _resolve_source_from_zip(source_code: UploadFile) -> tuple[str | None, objec
         return None, None
 
 
-def _resolve_source_from_link(source_link: str) -> tuple[str | None, object | None]:
+def _resolve_source_from_link(source_link: str) -> tuple[str | None, object | None, str]:
     """Clones or downloads a public GitHub repo URL into a temp dir.
     Tries git clone first, and if git is not available (like on Vercel),
     falls back to downloading the repository zipball directly."""
     parsed = urlparse(source_link)
     if parsed.scheme not in {"https", "ssh"} or not parsed.netloc:
-        return None, None
+        return None, None, "Use a valid HTTPS or SSH repository URL."
 
     temp_dir_obj = tempfile.TemporaryDirectory()
     source_dir = temp_dir_obj.name
 
-    # Try Git clone first
+    # Vercel's Python runtime normally has no git executable. Keep this
+    # local-host fallback, but clone into a child because source_dir exists.
     try:
+        checkout_dir = os.path.join(source_dir, "repository")
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", source_link, source_dir],
+            ["git", "clone", "--depth", "1", source_link, checkout_dir],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
-            return source_dir, temp_dir_obj
+            return checkout_dir, temp_dir_obj, "Repository source loaded."
     except Exception:
         pass  # Git command not found or failed, try zipball fallback
 
     # Fallback for GitHub repositories (download zipball)
-    if "github.com" in parsed.netloc:
+    if parsed.hostname == "github.com":
         try:
             parts = [p for p in parsed.path.split("/") if p]
             if len(parts) >= 2:
@@ -166,21 +169,32 @@ def _resolve_source_from_link(source_link: str) -> tuple[str | None, object | No
                 
                 zip_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
                 
-                # Fetch zipball
+                # GitHub's archive fallback works on Vercel without git.
                 import requests
-                headers = {"User-Agent": "Mozilla/5.0"}
+                headers = {"User-Agent": "redteam-in-a-box", "Accept": "application/vnd.github+json"}
                 # If a GitHub token is available in env, use it to avoid rate limits
                 github_token = os.getenv("GITHUB_TOKEN")
                 if github_token:
                     headers["Authorization"] = f"token {github_token}"
                 
-                response = requests.get(zip_url, headers=headers, allow_redirects=True, timeout=20)
+                response = requests.get(zip_url, headers=headers, allow_redirects=True, timeout=20, stream=True)
                 if response.status_code == 200:
                     zip_path = os.path.join(source_dir, "repo.zip")
+                    bytes_written = 0
                     with open(zip_path, "wb") as f:
-                        f.write(response.content)
-                    
+                        for chunk in response.iter_content(chunk_size=1024 * 1024):
+                            bytes_written += len(chunk)
+                            if bytes_written > MAX_SOURCE_ARCHIVE_BYTES:
+                                raise ValueError("GitHub archive exceeds the 25 MB limit")
+                            f.write(chunk)
+
                     with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                        members = zip_ref.infolist()
+                        if len(members) > MAX_SOURCE_FILES or sum(member.file_size for member in members) > MAX_SOURCE_UNCOMPRESSED_BYTES:
+                            raise ValueError("GitHub archive exceeds extraction limits")
+                        extraction_root = Path(source_dir).resolve()
+                        if any(not (extraction_root / member.filename).resolve().is_relative_to(extraction_root) for member in members):
+                            raise ValueError("GitHub archive contains an unsafe path")
                         zip_ref.extractall(source_dir)
                     os.remove(zip_path)
                     
@@ -193,12 +207,18 @@ def _resolve_source_from_link(source_link: str) -> tuple[str | None, object | No
                             shutil.move(str(item), source_dir)
                         nested_dir.rmdir()
                     
-                    return source_dir, temp_dir_obj
-        except Exception:
-            pass
+                    return source_dir, temp_dir_obj, "GitHub repository source loaded."
+                if response.status_code == 404:
+                    raise ValueError("Repository was not found or is private. Use a public repository or upload a ZIP.")
+                if response.status_code == 403:
+                    raise ValueError("GitHub rate limit reached. Configure GITHUB_TOKEN in Vercel or upload a ZIP.")
+                raise ValueError(f"GitHub returned HTTP {response.status_code}.")
+        except Exception as exc:
+            temp_dir_obj.cleanup()
+            return None, None, str(exc)
 
     temp_dir_obj.cleanup()
-    return None, None
+    return None, None, "This deployment can download public GitHub repositories only. Upload a ZIP for other hosts."
 
 
 @app.post("/api/scan")
@@ -211,6 +231,22 @@ async def run_scan(
     await log_to_terminal("🚀 Starting automated red-team scanner operation...", "info")
     await log_to_terminal(f"🔗 Targeted Application endpoint: {target_url}", "info")
 
+    parsed_target = urlparse(target_url)
+    if parsed_target.scheme not in {"http", "https"} or not parsed_target.netloc:
+        raise HTTPException(status_code=422, detail="Target URL must be a complete HTTP or HTTPS URL.")
+
+    # Individual probes intentionally treat a missing route as clean. Check
+    # connectivity once up front so an unreachable target is never reported as
+    # a successful scan with zero findings.
+    try:
+        await asyncio.to_thread(requests.get, target_url, timeout=10, allow_redirects=True)
+    except requests.RequestException as exc:
+        location_hint = " Vercel cannot reach localhost on your computer; use a public deployment or tunnel URL." if parsed_target.hostname in {"localhost", "127.0.0.1"} else ""
+        raise HTTPException(
+            status_code=422,
+            detail=f"Target is unreachable from the scanner: {exc}.{location_hint}",
+        ) from exc
+
     # ------------------------------------------------------------------
     # Step 1: resolve source context (ZIP upload OR GitHub link, never
     # both applied - link takes precedence if both are somehow given).
@@ -218,10 +254,11 @@ async def run_scan(
     # ------------------------------------------------------------------
     source_dir = None
     temp_dir_obj = None
+    source_status = "No source archive or repository was supplied."
 
     if source_link and source_link.strip():
         await log_to_terminal(f"🔗 Cloning source repo (read-only) for fix grounding: {source_link}", "info")
-        source_dir, temp_dir_obj = _resolve_source_from_link(source_link.strip())
+        source_dir, temp_dir_obj, source_status = _resolve_source_from_link(source_link.strip())
         if source_dir:
             await log_to_terminal("✅ Repo cloned successfully — suggestions will reference your real code.", "secure")
         else:
@@ -341,4 +378,4 @@ async def run_scan(
     if temp_dir_obj:
         temp_dir_obj.cleanup()
 
-    return {"target": target_url, "findings": report, "chains": chains, "coverage": coverage, "summary": assessment}
+    return {"target": target_url, "findings": report, "chains": chains, "coverage": coverage, "summary": assessment, "source_status": source_status}

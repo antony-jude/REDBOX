@@ -8,6 +8,7 @@ vulnerable-app/package-lock.json
 
 # Python
 scanner-engine/__pycache__/
+api/__pycache__/
 scanner-engine/attacks/__pycache__/
 scanner-engine/venv/
 scanner-engine/*.pyc

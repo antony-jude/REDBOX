@@ -748,9 +748,9 @@
       </div>
 
       <div class="controls-section" style="display: flex; gap: 12px; align-items: center;">
-        <input type="text" id="targetUrl" value="http://localhost:3001"
+        <input type="text" id="targetUrl" value=""
           style="padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: #ffffff; color: var(--text); box-shadow: 0 2px 8px rgba(232, 52, 42, 0.05); font-family: 'Fira Code', monospace; width: 250px;"
-          placeholder="Target URL" />
+          placeholder="https://your-authorized-app.example" />
 
         <label class="btn-scan"
           style="background: #ffffff; border: 1px solid var(--border); color: var(--accent); padding: 12px 24px; cursor: pointer; border-radius: 999px; font-weight: bold; box-shadow: 0 4px 15px rgba(232, 52, 42, 0.08);">
@@ -1245,6 +1245,16 @@
     }
 
     async function runScan() {
+      const targetUrl = targetUrlInput.value.trim();
+      if (!targetUrl) {
+        alert("Enter the public URL of an application you are authorized to test.");
+        return;
+      }
+      if (!isLocal && /localhost|127\.0\.0\.1/i.test(targetUrl)) {
+        alert("A Vercel deployment cannot reach localhost on your computer. Deploy the target app or use a public tunnel URL.");
+        return;
+      }
+
       scanFindings = [];
       scanChains = [];
       scanCoverage = [];
@@ -1268,7 +1278,7 @@
       assessmentSection.style.display = "none";
 
       const formData = new FormData();
-      formData.append("target_url", targetUrlInput.value);
+      formData.append("target_url", targetUrl);
 
       if (sourceLinkInput.value.trim()) {
         formData.append("source_link", sourceLinkInput.value.trim());
@@ -1286,12 +1296,23 @@
           body: formData
         });
         if (!response.ok) {
-          throw new Error(await response.text());
+          let message = `Scanner returned HTTP ${response.status}.`;
+          try {
+            const error = await response.json();
+            message = error.detail || error.message || JSON.stringify(error);
+          } catch (_) {
+            const text = await response.text();
+            if (text) message = text;
+          }
+          throw new Error(message);
         }
 
         // WebSocket events drive the live UI. If the connection was unavailable,
         // use the completed HTTP response so results are never silently lost.
         const report = await response.json();
+        if (report.source_status) {
+          appendLog(`Source review: ${report.source_status}`, report.source_status.includes("loaded") ? "secure" : "alert");
+        }
         if (!receivedScanEvents) {
           findingsGrid.innerHTML = "";
           report.findings.forEach(renderFinding);
