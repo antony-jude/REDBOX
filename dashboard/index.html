@@ -748,12 +748,8 @@
       </div>
 
       <div class="controls-section" style="display: flex; gap: 12px; align-items: center;">
-        <input type="text" id="targetUrl" value=""
-          style="padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border); background: #ffffff; color: var(--text); box-shadow: 0 2px 8px rgba(232, 52, 42, 0.05); font-family: 'Fira Code', monospace; width: 250px;"
-          placeholder="https://your-authorized-app.example" />
-
         <label class="btn-scan"
-          style="background: #ffffff; border: 1px solid var(--border); color: var(--accent); padding: 12px 24px; cursor: pointer; border-radius: 999px; font-weight: bold; box-shadow: 0 4px 15px rgba(232, 52, 42, 0.08);">
+          style="display:none; background: #ffffff; border: 1px solid var(--border); color: var(--accent); padding: 12px 24px; cursor: pointer; border-radius: 999px; font-weight: bold; box-shadow: 0 4px 15px rgba(232, 52, 42, 0.08);">
           <svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round"
               d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -762,8 +758,7 @@
           <input type="file" id="sourceZip" accept=".zip" style="display: none;"
             onchange="document.getElementById('zipName').textContent = this.files[0]?.name || ''" />
         </label>
-        <span id="zipName"
-          style="font-size: 12px; color: var(--muted); max-width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+        <span id="zipName" style="display:none"></span>
 
         <button id="downloadBtn" class="btn-scan"
           style="background: linear-gradient(135deg, #1f2937 0%, #111827 100%); display: none;"
@@ -800,7 +795,7 @@
       <h3 style="font-size: 14px; margin-bottom: 12px;">⚙️ Advanced — test any app you own</h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
-          <div class="vuln-section-title">GitHub repo link (optional, instead of ZIP)</div>
+          <div class="vuln-section-title">Public GitHub repository link</div>
           <input type="text" id="sourceLink" placeholder="https://github.com/you/your-app.git"
             style="width:100%; padding: 10px 14px; border-radius: 20px; border: 1px solid var(--border); background: #ffffff; color: var(--text); box-shadow: 0 2px 8px rgba(232, 52, 42, 0.05); font-family: 'Fira Code', monospace; font-size: 12px;" />
           <p style="font-size: 11px; color: var(--muted); margin-top: 6px;">
@@ -895,8 +890,6 @@
     const scanBtn = document.getElementById("scanBtn");
     const downloadBtn = document.getElementById("downloadBtn");
     const downloadHtmlBtn = document.getElementById("downloadHtmlBtn");
-    const targetUrlInput = document.getElementById("targetUrl");
-    const sourceZipInput = document.getElementById("sourceZip");
     const sourceLinkInput = document.getElementById("sourceLink");
     const customEndpointsInput = document.getElementById("customEndpoints");
     const backendStatus = document.getElementById("backendStatus");
@@ -1156,7 +1149,7 @@
         return;
       }
       const reportData = {
-        target: targetUrlInput.value,
+        target: "Repository source review",
         timestamp: new Date().toISOString(),
         findings: scanFindings,
         chains: scanChains,
@@ -1219,7 +1212,7 @@
 <html><head><meta charset="UTF-8"><title>Security Scan Report</title></head>
 <body style="font-family:-apple-system,Segoe UI,sans-serif;max-width:900px;margin:40px auto;color:#111;">
   <h1 style="margin-bottom:4px;">🛡️ AI Red-Team Security Report</h1>
-  <p style="color:#666;">Target: <b>${escapeHtmlReport(targetUrlInput.value)}</b> · Generated ${new Date().toLocaleString()}</p>
+  <p style="color:#666;">Target: <b>Repository source review</b> · Generated ${new Date().toLocaleString()}</p>
   <p style="font-size:12px;color:#999;">All suggested fixes below are recommendations only — no code was modified automatically.</p>
   ${scanSummary ? `<h2 style="margin-top:32px;">OWASP Assessment Summary</h2><p><b>${escapeHtmlReport(scanSummary.risk_level)} risk:</b> ${escapeHtmlReport(scanSummary.summary)}</p><h3>Priority actions</h3><ol>${actionRows}</ol>` : ""}
   <h2 style="margin-top:32px;">Findings (${scanFindings.length})</h2>
@@ -1245,13 +1238,9 @@
     }
 
     async function runScan() {
-      const targetUrl = targetUrlInput.value.trim();
-      if (!targetUrl) {
-        alert("Enter the public URL of an application you are authorized to test.");
-        return;
-      }
-      if (!isLocal && /localhost|127\.0\.0\.1/i.test(targetUrl)) {
-        alert("A Vercel deployment cannot reach localhost on your computer. Deploy the target app or use a public tunnel URL.");
+      const sourceLink = sourceLinkInput.value.trim();
+      if (!sourceLink) {
+        alert("Enter a public GitHub repository link to start the source review.");
         return;
       }
 
@@ -1278,13 +1267,7 @@
       assessmentSection.style.display = "none";
 
       const formData = new FormData();
-      formData.append("target_url", targetUrl);
-
-      if (sourceLinkInput.value.trim()) {
-        formData.append("source_link", sourceLinkInput.value.trim());
-      } else if (sourceZipInput.files.length > 0) {
-        formData.append("source_code", sourceZipInput.files[0]);
-      }
+      formData.append("source_link", sourceLink);
 
       if (customEndpointsInput.value.trim()) {
         formData.append("custom_endpoints", customEndpointsInput.value.trim());

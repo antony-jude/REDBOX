@@ -42,6 +42,7 @@ from cvss_scorer import calculate_severity
 from llm_analyzer import analyze_finding
 from llm_analyzer import summarize_assessment
 from owasp_assessment import build_coverage
+from source_scanner import scan as scan_source
 
 load_dotenv()
 
@@ -223,7 +224,7 @@ def _resolve_source_from_link(source_link: str) -> tuple[str | None, object | No
 
 @app.post("/api/scan")
 async def run_scan(
-    target_url: str = Form(...),
+    target_url: str = Form(""),
     source_code: UploadFile = File(None),
     source_link: str = Form(""),
     custom_endpoints: str = Form(""),
@@ -231,21 +232,23 @@ async def run_scan(
     await log_to_terminal("🚀 Starting automated red-team scanner operation...", "info")
     await log_to_terminal(f"🔗 Targeted Application endpoint: {target_url}", "info")
 
-    parsed_target = urlparse(target_url)
-    if parsed_target.scheme not in {"http", "https"} or not parsed_target.netloc:
-        raise HTTPException(status_code=422, detail="Target URL must be a complete HTTP or HTTPS URL.")
+    source_only = not target_url.strip()
+    if not source_only:
+        parsed_target = urlparse(target_url)
+        if parsed_target.scheme not in {"http", "https"} or not parsed_target.netloc:
+            raise HTTPException(status_code=422, detail="Target URL must be a complete HTTP or HTTPS URL.")
 
-    # Individual probes intentionally treat a missing route as clean. Check
-    # connectivity once up front so an unreachable target is never reported as
-    # a successful scan with zero findings.
-    try:
-        await asyncio.to_thread(requests.get, target_url, timeout=10, allow_redirects=True)
-    except requests.RequestException as exc:
-        location_hint = " Vercel cannot reach localhost on your computer; use a public deployment or tunnel URL." if parsed_target.hostname in {"localhost", "127.0.0.1"} else ""
-        raise HTTPException(
-            status_code=422,
-            detail=f"Target is unreachable from the scanner: {exc}.{location_hint}",
-        ) from exc
+        # Individual probes intentionally treat a missing route as clean. Check
+        # connectivity once up front so an unreachable target is never reported as
+        # a successful scan with zero findings.
+        try:
+            await asyncio.to_thread(requests.get, target_url, timeout=10, allow_redirects=True)
+        except requests.RequestException as exc:
+            location_hint = " Vercel cannot reach localhost on your computer; use a public deployment or tunnel URL." if parsed_target.hostname in {"localhost", "127.0.0.1"} else ""
+            raise HTTPException(
+                status_code=422,
+                detail=f"Target is unreachable from the scanner: {exc}.{location_hint}",
+            ) from exc
 
     # ------------------------------------------------------------------
     # Step 1: resolve source context (ZIP upload OR GitHub link, never
@@ -270,6 +273,29 @@ async def run_scan(
             await log_to_terminal("✅ Source code extracted successfully.", "secure")
         else:
             await log_to_terminal("❌ Failed to extract ZIP. Continuing without source grounding.", "alert")
+
+    if source_only:
+        if not source_dir:
+            raise HTTPException(
+                status_code=422,
+                detail="Provide a public GitHub repository link or a ZIP archive for source review.",
+            )
+        await log_to_terminal("Reviewing repository source with static checks...", "info")
+        findings = await asyncio.to_thread(scan_source, source_dir)
+        await log_to_terminal(f"Source review found {len(findings)} item(s) to verify.", "info")
+        report = []
+        for finding in findings:
+            entry = {**finding, "cvss": calculate_severity(finding), "analysis": await analyze_finding(finding, source_dir)}
+            report.append(entry)
+            await broadcast({"event": "finding", "data": entry})
+        coverage = build_coverage(report)
+        assessment = await summarize_assessment(report, coverage)
+        await broadcast({"event": "assessment", "data": {"coverage": coverage, "summary": assessment}})
+        await broadcast({"event": "chains", "data": []})
+        await broadcast({"event": "scan_complete", "data": {"total_findings": len(report)}})
+        if temp_dir_obj:
+            temp_dir_obj.cleanup()
+        return {"target": "Repository source review", "findings": report, "chains": [], "coverage": coverage, "summary": assessment, "source_status": source_status}
 
     # ------------------------------------------------------------------
     # Step 2: known demo-specific modules. These target exact routes
