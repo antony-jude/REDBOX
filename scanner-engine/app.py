@@ -133,27 +133,72 @@ def _resolve_source_from_zip(source_code: UploadFile) -> tuple[str | None, objec
 
 
 def _resolve_source_from_link(source_link: str) -> tuple[str | None, object | None]:
-    """Clones a public GitHub (or any git-accessible) repo URL into a temp
-    dir, read-only, purely to give the LLM real code to ground its
-    suggested fix_code_diff against. Nothing is ever pushed back."""
+    """Clones or downloads a public GitHub repo URL into a temp dir.
+    Tries git clone first, and if git is not available (like on Vercel),
+    falls back to downloading the repository zipball directly."""
     parsed = urlparse(source_link)
     if parsed.scheme not in {"https", "ssh"} or not parsed.netloc:
         return None, None
 
     temp_dir_obj = tempfile.TemporaryDirectory()
     source_dir = temp_dir_obj.name
+
+    # Try Git clone first
     try:
         result = subprocess.run(
             ["git", "clone", "--depth", "1", source_link, source_dir],
             capture_output=True, text=True, timeout=30,
         )
-        if result.returncode != 0:
-            temp_dir_obj.cleanup()
-            return None, None
-        return source_dir, temp_dir_obj
+        if result.returncode == 0:
+            return source_dir, temp_dir_obj
     except Exception:
-        temp_dir_obj.cleanup()
-        return None, None
+        pass  # Git command not found or failed, try zipball fallback
+
+    # Fallback for GitHub repositories (download zipball)
+    if "github.com" in parsed.netloc:
+        try:
+            parts = [p for p in parsed.path.split("/") if p]
+            if len(parts) >= 2:
+                owner = parts[0]
+                repo = parts[1]
+                if repo.endswith(".git"):
+                    repo = repo[:-4]
+                
+                zip_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
+                
+                # Fetch zipball
+                import requests
+                headers = {"User-Agent": "Mozilla/5.0"}
+                # If a GitHub token is available in env, use it to avoid rate limits
+                github_token = os.getenv("GITHUB_TOKEN")
+                if github_token:
+                    headers["Authorization"] = f"token {github_token}"
+                
+                response = requests.get(zip_url, headers=headers, allow_redirects=True, timeout=20)
+                if response.status_code == 200:
+                    zip_path = os.path.join(source_dir, "repo.zip")
+                    with open(zip_path, "wb") as f:
+                        f.write(response.content)
+                    
+                    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                        zip_ref.extractall(source_dir)
+                    os.remove(zip_path)
+                    
+                    # GitHub zipball extracts into a subfolder named like "owner-repo-commit/".
+                    # Let's check if there's a single subdirectory and move its contents to source_dir.
+                    subdirs = [d for d in Path(source_dir).iterdir() if d.is_dir()]
+                    if len(subdirs) == 1:
+                        nested_dir = subdirs[0]
+                        for item in nested_dir.iterdir():
+                            shutil.move(str(item), source_dir)
+                        nested_dir.rmdir()
+                    
+                    return source_dir, temp_dir_obj
+        except Exception:
+            pass
+
+    temp_dir_obj.cleanup()
+    return None, None
 
 
 @app.post("/api/scan")
