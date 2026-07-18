@@ -287,6 +287,8 @@ async def run_scan(
         for finding in findings:
             entry = {**finding, "cvss": calculate_severity(finding), "analysis": await analyze_finding(finding, source_dir)}
             report.append(entry)
+        report.sort(key=lambda item: item["cvss"].get("score", 0), reverse=True)
+        for entry in report:
             await broadcast({"event": "finding", "data": entry})
         coverage = build_coverage(report)
         assessment = await summarize_assessment(report, coverage)
@@ -391,6 +393,8 @@ async def run_scan(
         analysis = await analyze_finding(finding, source_dir)
         entry = {**finding, "cvss": cvss, "analysis": analysis}
         report.append(entry)
+    report.sort(key=lambda item: item["cvss"].get("score", 0), reverse=True)
+    for entry in report:
         await broadcast({"event": "finding", "data": entry})
 
     coverage = build_coverage(report)
