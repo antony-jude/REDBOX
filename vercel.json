@@ -1,28 +1,18 @@
 {
   "version": 2,
   "name": "redteam-in-a-box",
-  "builds": [
+  "rewrites": [
     {
-      "src": "dashboard/index.html",
-      "use": "@vercel/static"
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
     },
     {
-      "src": "scanner-engine/app.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "scanner-engine/app.py"
+      "source": "/ws/(.*)",
+      "destination": "/api/index.py"
     },
     {
-      "src": "/ws/(.*)",
-      "dest": "scanner-engine/app.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "dashboard/index.html"
+      "source": "/(.*)",
+      "destination": "/dashboard/index.html"
     }
   ]
 }
