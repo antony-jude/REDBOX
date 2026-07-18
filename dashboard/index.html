@@ -1001,7 +1001,9 @@
       } catch (e) {
         isBackendOnline = false;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-          backendStatus.textContent = "Scanner: unavailable - start the backend on port 8000";
+          backendStatus.textContent = isLocal
+            ? "Scanner: unavailable - start the backend on port 8000"
+            : "Scanner: unavailable - check Vercel deployment logs";
           backendStatus.style.color = "var(--critical)";
         }
       }
