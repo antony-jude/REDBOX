@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "name": "redteam-in-a-box",
+  "builds": [
+    {
+      "src": "dashboard/index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "scanner-engine/app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "scanner-engine/app.py"
+    },
+    {
+      "src": "/ws/(.*)",
+      "dest": "scanner-engine/app.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "dashboard/index.html"
+    }
+  ]
+}

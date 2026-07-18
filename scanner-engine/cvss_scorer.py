@@ -10,11 +10,19 @@ real CVSS scoring works (just simplified for a 30-hour build).
 
 # Vuln types that directly expose or let an attacker modify sensitive data.
 DIRECT_IMPACT_TYPES = {"SQL Injection", "Broken Access Control"}
+LOW_IMPACT_TYPES = {"Missing Security Headers"}
 
 
 def calculate_severity(finding: dict) -> dict:
     score = 0
     factors = []
+
+    if finding["type"] in LOW_IMPACT_TYPES:
+        return {
+            "score": 2,
+            "severity": "Low",
+            "factors": ["A browser hardening control is missing"],
+        }
 
     if finding["type"] in DIRECT_IMPACT_TYPES:
         score += 4

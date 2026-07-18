@@ -12,6 +12,7 @@ generates high-fidelity offline descriptions and code diffs for all 7 vulnerabil
 import os
 import json
 import asyncio
+from pathlib import Path
 
 from rag_grounding import build_grounded_prompt
 
@@ -36,7 +37,56 @@ def _call_gemini_sync(prompt: str) -> str:
     return response.text
 
 
-def _fallback_analysis(finding: dict) -> dict:
+SOURCE_EXTENSIONS = {".js", ".ts", ".tsx", ".py", ".java", ".go", ".rb", ".php", ".cs"}
+SOURCE_CONTEXT_LIMIT = 120_000
+
+
+def _source_context(source_dir: str) -> str:
+    """Read a bounded, source-only context. Uploaded source is never modified."""
+    chunks = []
+    remaining = SOURCE_CONTEXT_LIMIT
+    for path in Path(source_dir).rglob("*"):
+        if remaining <= 0:
+            break
+        if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
+            continue
+        if any(part.startswith(".") or part in {"node_modules", "vendor", "dist", "build"} for part in path.parts):
+            continue
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")[:remaining]
+        except OSError:
+            continue
+        if content:
+            chunks.append(f"--- {path.relative_to(source_dir)} ---\n{content}\n")
+            remaining -= len(content)
+    return "\n".join(chunks)
+
+
+def _source_reference(finding: dict, source_context: str) -> str:
+    """Find a review location when the optional LLM is unavailable."""
+    if not source_context:
+        return ""
+    endpoint = str(finding.get("endpoint", "")).strip("/").split("/")[-1]
+    keywords = {
+        "SQL Injection": ("select ", "query", "execute", "cursor"),
+        "Reflected XSS": ("res.send", "innerhtml", "render", "response.write"),
+        "Path Traversal": ("sendfile", "open(", "readfile", "path.join"),
+        "Command Injection": ("exec(", "spawn", "subprocess", "system("),
+        "SSRF": ("fetch(", "requests.", "http.get", "axios"),
+        "IDOR": ("params", "find", "get(", "user_id"),
+        "Broken Access Control": ("admin", "auth", "authorize", "role"),
+    }.get(finding.get("type"), ())
+    current_file = ""
+    for line_number, line in enumerate(source_context.splitlines(), start=1):
+        if line.startswith("--- "):
+            current_file = line[4:].rstrip(" -")
+        lowered = line.lower()
+        if any(keyword in lowered for keyword in keywords) or (endpoint and endpoint in lowered):
+            return f"Review candidate: {current_file}:{line_number}. Verify it handles {finding.get('type')} safely before changing it."
+    return "Source was reviewed, but no reliable matching line was found; use the suggested control at the affected endpoint."
+
+
+def _fallback_analysis(finding: dict, source_context: str = "") -> dict:
     t = finding.get("type", "")
     
     analysis_database = {
@@ -158,39 +208,49 @@ def _fallback_analysis(finding: dict) -> dict:
                 "+  } catch (e) { return res.status(400).json({ error: 'Invalid URL' }); }\n"
                 "   http.get(targetUrl, (response) => {"
             )
+        },
+        "Missing Security Headers": {
+            "cwe_id": "CWE-693",
+            "severity": "Low",
+            "explanation": "The application response is missing browser security headers. This does not prove an exploit by itself, but it removes safeguards that limit the impact of common browser-based attacks.",
+            "fix": "Set Content-Security-Policy, X-Content-Type-Options: nosniff, X-Frame-Options: DENY (or SAMEORIGIN), and a strict Referrer-Policy on every response.",
+            "fix_code_diff": ""
+        },
+        "Unsafe CORS Policy": {
+            "cwe_id": "CWE-942",
+            "severity": "High",
+            "explanation": "The server accepted an untrusted website as an allowed origin while permitting credentials. A malicious website could potentially read authenticated responses in a victim's browser.",
+            "fix": "Replace wildcard or reflected origins with an explicit allowlist of your frontend origins. Do not enable credentialed CORS unless the endpoint requires it.",
+            "fix_code_diff": ""
+        },
+        "Sensitive Error Details Exposed": {
+            "cwe_id": "CWE-209",
+            "severity": "Medium",
+            "explanation": "The response reveals a stack trace or internal error detail. That information can help an attacker understand the application and target later attacks.",
+            "fix": "Log the detailed exception on the server, but return a generic error message such as 'An unexpected error occurred' to the client.",
+            "fix_code_diff": ""
         }
     }
     
-    return analysis_database.get(t, {
+    result = analysis_database.get(t, {
         "cwe_id": "N/A",
         "severity": "Medium",
         "explanation": f"[Offline Analysis] {t} detected at {finding.get('endpoint', 'endpoint')}.",
         "fix": "Perform standard sanitization and verification of inputs.",
         "fix_code_diff": ""
-    })
+    }).copy()
+    source_reference = _source_reference(finding, source_context)
+    if source_reference:
+        result["source_reference"] = source_reference
+        # A demo diff cannot safely be presented as a patch for an unknown upload.
+        result["fix_code_diff"] = ""
+    return result
 
 
 async def analyze_finding(finding: dict, source_dir: str = None) -> dict:
+    source_context = _source_context(source_dir) if source_dir and os.path.exists(source_dir) else ""
     if not USE_LLM:
-        return _fallback_analysis(finding)
-
-    source_context = ""
-    if source_dir and os.path.exists(source_dir):
-        # Gather all source files into a single context string
-        for root, _, files in os.walk(source_dir):
-            for file in files:
-                # only load relevant app source files to avoid context bloat
-                if file.endswith((".js", ".py", ".ts", ".json", ".html")):
-                    filepath = os.path.join(root, file)
-                    # ignore node_modules and hidden folders
-                    if "node_modules" in filepath or "/." in filepath or "\\." in filepath:
-                        continue
-                    try:
-                        with open(filepath, "r", encoding="utf-8") as f:
-                            content = f.read()
-                            source_context += f"--- {os.path.relpath(filepath, source_dir)} ---\n{content}\n\n"
-                    except Exception:
-                        pass
+        return _fallback_analysis(finding, source_context)
 
     prompt = build_grounded_prompt(finding, source_context)
     try:
@@ -198,6 +258,42 @@ async def analyze_finding(finding: dict, source_dir: str = None) -> dict:
         cleaned = raw_text.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        return _fallback_analysis(finding)
+        return _fallback_analysis(finding, source_context)
     except Exception:
-        return _fallback_analysis(finding)
+        return _fallback_analysis(finding, source_context)
+
+
+async def summarize_assessment(findings: list[dict], coverage: list[dict]) -> dict:
+    """Second LLM role: produce a short, management-ready assessment summary."""
+    highest = max((item.get("cvss", {}).get("score", 0) for item in findings), default=0)
+    fallback = {
+        "risk_level": "Critical" if highest >= 8 else "High" if highest >= 6 else "Medium" if findings else "Low",
+        "summary": (
+            f"The scan found {len(findings)} issue(s). Address the highest-severity findings first, then retest the affected routes. "
+            "This automated scan is not a complete security assessment; complete the human-review items in the OWASP coverage matrix."
+        ),
+        "priority_actions": [item.get("analysis", {}).get("fix", "Review the finding.") for item in findings[:3]],
+        "human_review": [item["name"] for item in coverage if item["coverage"] != "Automated"],
+    }
+    if not USE_LLM:
+        return fallback
+
+    compact_findings = [
+        {"type": item.get("type"), "severity": item.get("cvss", {}).get("severity"), "endpoint": item.get("endpoint")}
+        for item in findings
+    ]
+    prompt = f"""You are an application-security lead. Summarize this authorized OWASP assessment using only the supplied data. Do not claim the application is secure or that a finding is exploitable beyond the evidence. Use plain language.
+
+FINDINGS: {json.dumps(compact_findings)}
+HUMAN REVIEW CATEGORIES: {json.dumps(fallback['human_review'])}
+
+Return raw JSON only:
+{{"risk_level":"Critical|High|Medium|Low","summary":"two concise sentences","priority_actions":["action 1","action 2","action 3"],"human_review":["category"]}}"""
+    try:
+        raw_text = await asyncio.to_thread(_call_gemini_sync, prompt)
+        result = json.loads(raw_text.strip().replace("```json", "").replace("```", "").strip())
+        if isinstance(result.get("priority_actions"), list):
+            return result
+    except Exception:
+        pass
+    return fallback

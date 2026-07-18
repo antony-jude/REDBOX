@@ -80,6 +80,18 @@ KNOWLEDGE_BASE = {
             "strict URL whitelisting, or blocking private IP ranges."
         ),
     },
+    "Missing Security Headers": {
+        "cwe": "CWE-693",
+        "reference": "Security response headers reduce browser-side attack impact. A Content-Security-Policy limits script sources, X-Content-Type-Options prevents MIME sniffing, X-Frame-Options limits clickjacking, and Referrer-Policy reduces URL data leakage.",
+    },
+    "Unsafe CORS Policy": {
+        "cwe": "CWE-942",
+        "reference": "A CORS policy that reflects arbitrary origins while allowing credentials can let an attacker-controlled website read authenticated cross-origin responses. Allow only trusted origins and only enable credentials when necessary.",
+    },
+    "Sensitive Error Details Exposed": {
+        "cwe": "CWE-209",
+        "reference": "Detailed error messages and stack traces disclose implementation details that help attackers. Return a generic client error and log the detailed exception only on the server.",
+    },
 }
 
 
