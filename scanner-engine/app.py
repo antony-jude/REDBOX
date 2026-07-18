@@ -22,8 +22,13 @@ import tempfile
 import shutil
 import zipfile
 import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
+
+# Ensure local directories are in the Python search path (critical for Vercel/lambda environments)
+sys.path.insert(0, str(Path(__file__).parent.resolve()))
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
