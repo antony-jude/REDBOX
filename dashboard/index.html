@@ -1087,14 +1087,14 @@
       <div class="vuln-section-title">Priority Reason</div>
       <div class="vuln-description" style="color: #94a3b8;">${escapeHtml(severityReason)}</div>
       
-      <div class="vuln-details-accordion">
+      <div class="vuln-details-accordion expanded">
         <div class="vuln-section-title" style="border-top:1px solid rgba(255,255,255,0.05); padding-top: 14px;">Suggested Change (Not Applied)</div>
         <div class="vuln-description" style="color: #94a3b8;">${escapeHtml(f.analysis?.fix || "No recommendation.")}</div>
         ${f.analysis?.source_reference ? `<div class="vuln-description" style="color: #67e8f9; font-family: 'Fira Code', monospace; font-size: 12px;">${escapeHtml(f.analysis.source_reference)}</div>` : ""}
         ${diffHtml}
       </div>
       
-      <div style="text-align: right; font-size: 11px; color: var(--muted); margin-top: 8px;">Click card to toggle patch details</div>
+      <div style="text-align: right; font-size: 11px; color: var(--muted); margin-top: 8px;">Click card to collapse or expand details</div>
     `;
 
       findingsGrid.appendChild(card);
